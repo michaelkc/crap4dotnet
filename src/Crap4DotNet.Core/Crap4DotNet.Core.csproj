@@ -3,6 +3,7 @@
   <PropertyGroup>
     <RootNamespace>Crap4DotNet.Core</RootNamespace>
     <AssemblyName>Crap4DotNet.Core</AssemblyName>
+    <DebugType>embedded</DebugType>
     <Description>CRAP metric analysis engine: formula, complexity, coverage, matching</Description>
   </PropertyGroup>
 

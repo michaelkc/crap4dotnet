@@ -12,9 +12,17 @@ dotnet tool install -g Crap4DotNet
 
 ## Usage
 
+Requires .NET 10. Source inputs include `.cs`, directories, `.csproj`, `.sln`, and `.slnx`.
+
 ```bash
 # Run tests and analyze in one step
 dotnet-crap analyze ./MyApp.sln --run-tests
+
+# MTP v2 (select Microsoft.Testing.Platform in the target's global.json)
+dotnet-crap analyze ./MyApp.slnx --run-tests
+
+# MTP with coverlet.MTP instead of Microsoft.Testing.Extensions.CodeCoverage
+dotnet-crap analyze ./MyApp.slnx --run-tests --coverage-provider coverlet
 
 # Analyze with explicit coverage file
 dotnet-crap analyze ./src/MyProject --coverage ./TestResults/coverage.cobertura.xml
@@ -27,6 +35,16 @@ dotnet-crap analyze ./src/MyProject --coverage ./coverage.xml --threshold 15
 
 # Compare two reports
 dotnet-crap diff before.json after.json
+```
+
+`--run-tests` defaults to Microsoft's coverage extension for MTP and `coverlet.collector`
+for VSTest. Install the corresponding package in your test projects. It builds and
+executes the target repository's code; only use it with repositories you trust.
+
+Publish a single executable (replace the runtime identifier for your platform):
+
+```bash
+dotnet publish src/Crap4DotNet.Cli -c Release -r linux-x64 --self-contained true
 ```
 
 ## Exit Codes

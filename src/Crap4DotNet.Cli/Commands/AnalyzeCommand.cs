@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.Diagnostics;
 using Crap4DotNet.Core.Analysis;
 using Crap4DotNet.Core.Configuration;
 using Crap4DotNet.Core.Coverage;
@@ -11,7 +10,7 @@ internal static class AnalyzeCommand
 {
     public static Command Create()
     {
-        var pathArg = new Argument<string>("path", "Path to .cs file, directory, .csproj, or .sln");
+        var pathArg = new Argument<string>("path", "Path to .cs file, directory, .csproj, .sln, or .slnx");
         var coverageOpt = new Option<string[]>("--coverage", "Path(s) to Cobertura XML coverage file(s)")
         {
             AllowMultipleArgumentsPerToken = true
@@ -20,6 +19,8 @@ internal static class AnalyzeCommand
         var outputOpt = new Option<string?>("--output", "Write JSON to file instead of stdout");
         var minCrapOpt = new Option<double?>("--min-crap", "Only include methods with CRAP >= this value");
         var runTestsOpt = new Option<bool>("--run-tests", "Run dotnet test to generate coverage before analysis");
+        var providerOpt = new Option<CoverageProvider>("--coverage-provider", () => CoverageProvider.Auto,
+            "Coverage provider for --run-tests: auto (VSTest: Coverlet; MTP: Microsoft), coverlet, or microsoft");
 
         var command = new Command("analyze", "Analyze source code for CRAP metrics")
         {
@@ -28,10 +29,11 @@ internal static class AnalyzeCommand
             thresholdOpt,
             outputOpt,
             minCrapOpt,
-            runTestsOpt
+            runTestsOpt,
+            providerOpt
         };
 
-        command.SetHandler(Execute, pathArg, coverageOpt, thresholdOpt, outputOpt, minCrapOpt, runTestsOpt);
+        command.SetHandler(Execute, pathArg, coverageOpt, thresholdOpt, outputOpt, minCrapOpt, runTestsOpt, providerOpt);
         return command;
     }
 
@@ -41,7 +43,8 @@ internal static class AnalyzeCommand
         int threshold,
         string? outputPath,
         double? minCrap,
-        bool runTests)
+        bool runTests,
+        CoverageProvider provider)
     {
         // Validate --run-tests and --coverage are mutually exclusive
         if (runTests && coveragePaths.Length > 0)
@@ -56,7 +59,7 @@ internal static class AnalyzeCommand
         if (runTests && path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
         {
             ErrorOutput.WriteError("INVALID_CONFIGURATION",
-                "--run-tests requires a .csproj, .sln, or directory path, not a .cs file.");
+                "--run-tests requires a .csproj, .sln, .slnx, or directory path, not a .cs file.");
             Environment.ExitCode = 2;
             return;
         }
@@ -99,14 +102,16 @@ internal static class AnalyzeCommand
         List<string> resolvedCoveragePaths;
         if (runTests)
         {
-            var testCoveragePaths = RunTests(path);
-            if (testCoveragePaths is null)
+            try
             {
-                // RunTests already wrote error output
+                resolvedCoveragePaths = TestCoverageRunner.Run(path, provider);
+            }
+            catch (CrapCliException ex)
+            {
+                ErrorOutput.WriteError(ex.Code, ex.Message, file: ex.FilePath);
                 Environment.ExitCode = 2;
                 return;
             }
-            resolvedCoveragePaths = testCoveragePaths;
         }
         else
         {
@@ -183,87 +188,6 @@ internal static class AnalyzeCommand
         Environment.ExitCode = result.Data.Stats.CrappyMethodCount > 0 ? 1 : 0;
     }
 
-    private static List<string>? RunTests(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-
-        // Determine the target for dotnet test
-        string target;
-        if (fullPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
-            || fullPath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-        {
-            target = fullPath;
-        }
-        else if (Directory.Exists(fullPath))
-        {
-            target = fullPath;
-        }
-        else
-        {
-            ErrorOutput.WriteError("INVALID_CONFIGURATION",
-                $"--run-tests requires a .csproj, .sln, or directory path: {path}");
-            return null;
-        }
-
-        var resultsDir = Path.Combine(
-            Directory.Exists(fullPath) ? fullPath : Path.GetDirectoryName(fullPath) ?? ".",
-            "TestResults",
-            $"crap-{Guid.NewGuid():N}");
-
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                Arguments = $"test \"{target}\" --collect:\"XPlat Code Coverage\" --results-directory \"{resultsDir}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            }
-        };
-
-        process.Start();
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-
-        if (process.ExitCode != 0)
-        {
-            // Forward test output so the user can see what failed
-            if (!string.IsNullOrWhiteSpace(stdout))
-                Console.Error.Write(stdout);
-            if (!string.IsNullOrWhiteSpace(stderr))
-                Console.Error.Write(stderr);
-
-            ErrorOutput.WriteError("TEST_FAILURE",
-                $"dotnet test exited with code {process.ExitCode}. Fix failing tests and retry.");
-            return null;
-        }
-
-        // Find generated coverage files
-        if (!Directory.Exists(resultsDir))
-        {
-            ErrorOutput.WriteError("COVERAGE_FILE_NOT_FOUND",
-                "dotnet test completed but no TestResults directory was created. Is the coverlet collector installed?",
-                file: resultsDir);
-            return null;
-        }
-
-        var coverageFiles = Directory.GetFiles(resultsDir, "coverage.cobertura.xml", SearchOption.AllDirectories)
-            .ToList();
-
-        if (coverageFiles.Count == 0)
-        {
-            ErrorOutput.WriteError("COVERAGE_FILE_NOT_FOUND",
-                "dotnet test completed but no coverage.cobertura.xml was generated. "
-                + "Ensure the coverlet.collector NuGet package is referenced in your test project(s).",
-                file: resultsDir);
-            return null;
-        }
-
-        return coverageFiles;
-    }
-
     private static (List<string> files, string projectName) ResolveSourceFiles(string path)
     {
         if (!Path.Exists(path))
@@ -295,8 +219,9 @@ internal static class AnalyzeCommand
             return (files, Path.GetFileNameWithoutExtension(path));
         }
 
-        // .sln — find .cs files in solution directory, excluding test projects
-        if (path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+        // .sln / .slnx — find .cs files in solution directory, excluding test projects
+        if (path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
         {
             var dir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
             var files = Directory.GetFiles(dir, "*.cs", SearchOption.AllDirectories)
@@ -331,14 +256,14 @@ internal static class AnalyzeCommand
             ? sourcePath
             : Path.GetDirectoryName(Path.GetFullPath(sourcePath)) ?? ".";
 
-        var discovered = Directory.GetFiles(searchDir, "coverage.cobertura.xml", SearchOption.AllDirectories)
+        var discovered = Directory.GetFiles(searchDir, "*cobertura.xml", SearchOption.AllDirectories)
             .Where(f => f.Contains("TestResults"))
             .ToList();
 
         if (discovered.Count == 0)
         {
             throw new CrapCliException("COVERAGE_FILE_NOT_FOUND",
-                "No coverage files found. Run 'dotnet test --collect:\"XPlat Code Coverage\"' to generate coverage data.",
+                "No Cobertura coverage files found. Use --run-tests or provide --coverage explicitly.",
                 searchDir);
         }
 

@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Text.Json;
 using Crap4DotNet.Cli.Commands;
+using Crap4DotNet.Core.Coverage;
 using FluentAssertions;
 using Xunit;
 
@@ -539,6 +540,85 @@ public sealed class IntegrationTests : IDisposable
     }
 
     // === --run-tests flag ===
+
+    [Theory]
+    [InlineData("sln")]
+    [InlineData("slnx")]
+    public void FullPipeline_SolutionFormats(string extension)
+    {
+        var solution = CreateFile($"MyApp.{extension}", extension == "slnx" ? "<Solution />" : "");
+        CreateFile("src/Calculator.cs", SimpleCSharpSource);
+        CreateFile("tests/Ignored.cs", "public class Ignored { public void Test() {} }");
+        var coverage = CreateFile("coverage.cobertura.xml", CoberturaCoverageXml);
+
+        var (exitCode, stdout, stderr) = InvokeAnalyze(solution, "--coverage", coverage);
+
+        exitCode.Should().Be(0, stderr);
+        stderr.Should().BeEmpty();
+        var report = JsonDocument.Parse(stdout).RootElement;
+        report.GetProperty("project").GetString().Should().Be("MyApp");
+        report.GetProperty("methods").GetArrayLength().Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData("tests/Sample.Tests/Sample.Tests.csproj", "microsoft")]
+    [InlineData("Sample.slnx", "microsoft")]
+    [InlineData(".", "coverlet")]
+    public void RunTests_MtpV2_CollectsRealCoverage(string target, string provider)
+    {
+        var fixture = CopyMtpFixture();
+        var (exitCode, stdout, stderr) = InvokeAnalyze(
+            Path.Combine(fixture, target), "--run-tests", "--coverage-provider", provider);
+
+        exitCode.Should().Be(0, stderr);
+        stderr.Should().BeEmpty();
+        var methods = JsonDocument.Parse(stdout).RootElement.GetProperty("methods").EnumerateArray();
+        // A test .csproj only analyzes sources beneath that project, not its referenced library.
+        if (target.EndsWith(".csproj", StringComparison.Ordinal))
+        {
+            methods.Should().NotBeEmpty();
+            var reports = Directory.GetFiles(fixture, "*cobertura.xml", SearchOption.AllDirectories);
+            var entries = reports.SelectMany(report => CoberturaCoverageReader.Read(File.ReadAllText(report)));
+            entries.Should().Contain(entry => entry.ClassName == "Sample.Calculator" && entry.Coverage == 1);
+            return;
+        }
+        var absolute = methods.Single(m => m.GetProperty("className").GetString() == "Calculator"
+            && m.GetProperty("methodName").GetString() == "Absolute");
+        absolute.GetProperty("coverage").GetDouble().Should().Be(1);
+        absolute.GetProperty("crap").GetDouble().Should().Be(2);
+    }
+
+    [Fact]
+    public void RunTests_MtpV2_FailingTestsDoNotProduceReport()
+    {
+        var fixture = CopyMtpFixture();
+        var testFile = Path.Combine(fixture, "tests/Sample.Tests/CalculatorTests.cs");
+        File.WriteAllText(testFile, File.ReadAllText(testFile).Replace("Assert.Equal(expected,", "Assert.Equal(expected + 1,", StringComparison.Ordinal));
+
+        var (exitCode, stdout, stderr) = InvokeAnalyze(
+            Path.Combine(fixture, "Sample.slnx"), "--run-tests");
+
+        exitCode.Should().Be(2);
+        stdout.Should().BeEmpty();
+        stderr.Should().Contain("TEST_FAILURE");
+    }
+
+    private string CopyMtpFixture()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "crap4dotnet.sln")))
+            root = root.Parent;
+        var fixture = Path.Combine(root!.FullName, "tests", "Fixtures", "MtpV2");
+        var destination = Path.Combine(_tempDir, "MTP fixture with spaces");
+        foreach (var file in Directory.GetFiles(fixture, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(fixture, file);
+            if (relative.Split(Path.DirectorySeparatorChar).Any(p => p is "bin" or "obj" or "TestResults"))
+                continue;
+            CreateFile(Path.Combine("MTP fixture with spaces", relative), File.ReadAllText(file));
+        }
+        return destination;
+    }
 
     [Fact]
     public void Error_RunTestsAndCoverage_MutuallyExclusive()

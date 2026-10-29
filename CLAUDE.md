@@ -10,7 +10,7 @@ crap4dotnet calculates CRAP (Change Risk Anti-Patterns) metrics for .NET code. I
 
 ```bash
 dotnet build                              # build all projects
-dotnet test                               # run all tests (217 core + 23 CLI)
+dotnet test                               # run all tests, including MTP v2 integration fixtures
 dotnet test --filter "FullyQualifiedName~SummaryReportWriter"  # run tests matching a name
 dotnet test tests/Crap4DotNet.Core.Tests  # run one test project
 dotnet test tests/Crap4DotNet.Cli.Tests   # run CLI integration tests
@@ -56,7 +56,7 @@ CLI (System.CommandLine)              Core Library
 
 ## Build Configuration
 
-- .NET 8.0, C# latest, nullable enabled, implicit usings
+- .NET 10.0, C# latest, nullable enabled, implicit usings
 - **Warnings are errors** — all projects via `Directory.Build.props`
 - Analyzer level: `latest-recommended` (CA1305 etc. enforced — use `CultureInfo.InvariantCulture` for all formatting)
 - xUnit + FluentAssertions + NSubstitute for tests
@@ -68,6 +68,8 @@ CLI (System.CommandLine)              Core Library
 - Models are **records** with `required` properties
 - The `--output` flag changes behavior: with it, JSON goes to file and summary to stdout; without it, JSON goes to stdout (for piping)
 - Exit code 1 = CRAPpy methods found, exit code 2 = configuration/parse error
+- `.sln` and `.slnx` inputs scan source beneath the solution directory, excluding test paths; they do not evaluate project membership.
+- `TestCoverageRunner` selects the test runner from the target's nearest `global.json`. MTP defaults to Microsoft's coverage extension; `--coverage-provider coverlet` selects `coverlet.MTP`.
 
 ## Workflow
 

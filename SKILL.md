@@ -2,7 +2,7 @@
 name: crap
 description: Analyze C# code for CRAP (Change Risk Anti-Patterns) metrics using dotnet-crap
 license: MIT
-compatibility: Requires .NET 8.0+ SDK. The dotnet-crap global tool must be installed.
+compatibility: Requires .NET 10.0+ SDK. The dotnet-crap global tool must be installed.
 metadata:
   author: 7Factor
   version: "0.1.0"
@@ -12,12 +12,12 @@ You have access to `dotnet-crap`, a .NET global tool that computes CRAP scores f
 
 ## Prerequisites
 
-The tool is not yet published to NuGet. Install from source:
+Install this fork from source:
 
 ```bash
 git clone <repo-url> && cd crap4dotnet
 dotnet pack src/Crap4DotNet.Cli -o ./nupkg
-dotnet tool install -g Crap4DotNet --add-source ./nupkg
+dotnet tool install -g Crap4DotNet --add-source ./nupkg --prerelease
 ```
 
 Verify with `dotnet-crap --version`.
@@ -38,9 +38,10 @@ Or if the user already has Cobertura coverage files:
 dotnet-crap analyze <path> --coverage <coverage-xml-path>
 ```
 
-- `<path>` can be a `.cs` file, directory, `.csproj`, or `.sln` (`--run-tests` requires `.csproj`, `.sln`, or directory)
+- `<path>` can be a `.cs` file, directory, `.csproj`, `.sln`, or `.slnx` (`--run-tests` requires `.csproj`, `.sln`, `.slnx`, or directory)
 - `--run-tests` runs `dotnet test` with coverage collection automatically (mutually exclusive with `--coverage`)
-- `--coverage` accepts one or more Cobertura XML paths (globs work)
+- For MTP v2, select `Microsoft.Testing.Platform` in the target's `global.json`. The default coverage provider requires `Microsoft.Testing.Extensions.CodeCoverage`; use `--coverage-provider coverlet` for projects with `coverlet.MTP`. See the README for setup.
+- `--coverage` accepts one or more Cobertura XML paths (expand globs in the shell)
 - `--threshold <n>` sets the CRAP threshold (default: 30)
 - `--min-crap <n>` filters out low-scoring methods from output
 - `--output <path>` writes JSON to a file instead of stdout

@@ -34,7 +34,18 @@ Methods with a CRAP score above the threshold (default: 30) are **CRAPpy** — t
 dotnet tool install -g Crap4DotNet
 ```
 
-Requires .NET 8.0 or later.
+Requires .NET 10.0 or later.
+
+To publish a single executable for a specific platform:
+
+```bash
+dotnet publish src/Crap4DotNet.Cli -c Release -r linux-x64 --self-contained true -o ./artifacts/publish
+```
+
+Use `win-x64` for Windows (`dotnet-crap.exe`) or `osx-arm64` for Apple Silicon.
+Publishing bundles the application into one file. `--self-contained true` also bundles
+the .NET runtime; without it, the executable requires .NET 10 on the destination.
+Running tests still requires a .NET SDK suitable for the target project.
 
 ## Quick Start
 
@@ -63,9 +74,10 @@ dotnet-crap analyze <path> [options]
 
 | Argument/Option | Description |
 |-----------------|-------------|
-| `<path>` | Path to `.cs` file, directory, `.csproj`, or `.sln` |
+| `<path>` | Path to `.cs` file, directory, `.csproj`, `.sln`, or `.slnx` |
 | `--coverage <path>` | Path(s) to Cobertura XML coverage file(s) |
 | `--run-tests` | Run `dotnet test` to generate coverage automatically |
+| `--coverage-provider <provider>` | With `--run-tests`: `auto` (default), `microsoft`, or `coverlet` |
 | `--threshold <n>` | CRAP threshold (default: 30) |
 | `--output <path>` | Write JSON to file instead of stdout |
 | `--min-crap <n>` | Only include methods with CRAP >= this value |
@@ -77,12 +89,51 @@ dotnet-crap analyze ./MyApp.sln --run-tests
 # Analyze a solution with pre-generated coverage
 dotnet-crap analyze ./MyApp.sln --coverage ./coverage.cobertura.xml
 
+# Analyze the XML solution format
+dotnet-crap analyze ./MyApp.slnx --run-tests
+
 # Save report and filter noisy low-CRAP methods
 dotnet-crap analyze ./src --coverage ./coverage.xml --output report.json --min-crap 15
 
 # Stricter threshold
 dotnet-crap analyze ./src --coverage ./coverage.xml --threshold 15
 ```
+
+Solution inputs scan C# files beneath the solution directory and exclude `bin`, `obj`,
+and paths starting with `test` (case insensitive). They do not evaluate solution
+membership or project compile items.
+
+### Microsoft.Testing.Platform v2
+
+`--run-tests` honors the nearest `global.json` above the target directory. For the
+.NET 10 MTP runner, configure your target repository with:
+
+```json
+{
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
+  }
+}
+```
+
+The default coverage provider for MTP is `Microsoft.Testing.Extensions.CodeCoverage`;
+reference a version compatible with MTP v2 in your test projects. The tool requests
+Cobertura output with `--coverage --coverage-output-format cobertura`.
+
+If your MTP projects use `coverlet.MTP` instead, select it explicitly:
+
+```bash
+dotnet-crap analyze ./MyApp.slnx --run-tests --coverage-provider coverlet
+```
+
+VSTest projects continue to use `coverlet.collector` and `--collect:"XPlat Code Coverage"`.
+MTP projects must opt into the MTP runner in `global.json`; the legacy VSTest/MSBuild
+bridge is not supported. All test projects in a run must support the selected provider.
+See Microsoft's [coverage extension documentation](https://learn.microsoft.com/en-us/dotnet/core/testing/microsoft-testing-platform-code-coverage).
+
+`--run-tests` builds and executes the target repository's tests and build targets,
+and may restore NuGet packages. Use it with repositories you trust. Analysis with
+existing coverage only reads source and coverage files and writes the requested report.
 
 ### `diff`
 

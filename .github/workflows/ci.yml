@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0'
+          dotnet-version: '10.0.x'
 
       - name: Restore
         run: dotnet restore
@@ -27,6 +27,19 @@ jobs:
 
       - name: Test
         run: dotnet test --no-build
+
+      - name: Publish single executable
+        run: dotnet publish src/Crap4DotNet.Cli -c Release -r linux-x64 --self-contained true -o ./artifacts/publish
+
+      - name: Verify published executable
+        run: |
+          test "$(find ./artifacts/publish -type f | wc -l)" -eq 1
+          ./artifacts/publish/dotnet-crap --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-crap-linux-x64
+          path: ./artifacts/publish/dotnet-crap
 
       - name: Pack CLI tool
         run: dotnet pack src/Crap4DotNet.Cli -o ./nupkg

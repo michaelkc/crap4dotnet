@@ -5,16 +5,13 @@
 
   <ItemGroup>
     <!-- Roslyn APIs for syntax-tree analysis -->
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
 
     <!-- CLI framework -->
     <PackageVersion Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
 
     <!-- Versioning -->
     <PackageVersion Include="MinVer" Version="7.0.0" />
-
-    <!-- JSON serialization -->
-    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
 
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />

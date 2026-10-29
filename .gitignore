@@ -11,6 +11,7 @@
 # NuGet
 *.nupkg
 *.snupkg
+artifacts/
 
 # IDE
 .vs/
